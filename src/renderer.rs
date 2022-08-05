@@ -1,66 +1,27 @@
 use crate::parser::*;
 
-macro_rules! BIBLACK {
-    () => {
-        "\x1b[0;90m{}\x1b[0m"
-    };
-}
-macro_rules! BIRED {
-    () => {
-        "\x1b[0;91m{}\x1b[0m"
-    };
-}
-macro_rules! BIGREEN {
-    () => {
-        "\x1b[0;92m{}\x1b[0m"
-    };
-}
-macro_rules! BIYELLOW {
-    () => {
-        "\x1b[0;93m{}\x1b[0m"
-    };
-}
-macro_rules! BIBLUE {
-    () => {
-        "\x1b[0;94m{}\x1b[0m"
-    };
-}
-macro_rules! BIPURPLE {
-    () => {
-        "\x1b[0;95m{}\x1b[0m"
-    };
-}
-macro_rules! BICYAN {
-    () => {
-        "\x1b[0;96m{}\x1b[0m"
-    };
-}
-macro_rules! BIWHITE {
-    () => {
-        "\x1b[0;97m{}\x1b[0m"
+macro_rules! make_color {
+    ($color: literal) => {
+        concat!("\x1b[", $color, "m{}\x1b[0m")
     };
 }
 
-// Fix: replace the repeat
-pub fn red(s: String) -> String {
-    format!(BIRED!(), s)
+macro_rules! declare_color_function {
+    ($fn:ident, $color: literal) => {
+        fn $fn(s: String) -> String {
+            format!(make_color!($color), s)
+        }
+    };
 }
 
-pub fn green(s: String) -> String {
-    format!(BIGREEN!(), s)
-}
-
-pub fn blue(s: String) -> String {
-    format!(BIBLUE!(), s)
-}
-
-pub fn purple(s: String) -> String {
-    format!(BIPURPLE!(), s)
-}
-
-pub fn white(s: String) -> String {
-    format!(BIWHITE!(), s)
-}
+// declare_color_function!(black, "0;90");
+declare_color_function!(red, "0;91");
+declare_color_function!(green, "0;92");
+// declare_color_function!(yellow, "0;93");
+declare_color_function!(blue, "0;94");
+declare_color_function!(purple, "0;95");
+// declare_color_function!(cyan, "0;96");
+declare_color_function!(white, "0;97");
 
 static COLORIZERS: [fn(String) -> String; 4] = [red, green, blue, purple];
 
@@ -154,4 +115,23 @@ pub fn render_hu8(hu8: &[u8]) -> String {
     }
     res = res.trim().to_string();
     res
+}
+
+// given a span of `len` size, place the s in the center of the span
+fn align_text_center(s: String, len: usize) -> String {
+    let slen = s.len();
+    let spaces = len - slen;
+    let left = spaces / 2;
+    let right = spaces - left;
+    " ".repeat(left) + &s + &" ".repeat(right)
+}
+fn align_text_left(s: String, len: usize) -> String {
+    let slen = s.len();
+    let spaces = len - slen;
+    s + &" ".repeat(spaces)
+}
+fn align_text_right(s: String, len: usize) -> String {
+    let slen = s.len();
+    let spaces = len - slen;
+    " ".repeat(spaces) + &s
 }
