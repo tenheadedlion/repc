@@ -1,20 +1,19 @@
-use std::{
-    env,
-    fmt::{format, Display},
-    slice,
-};
+use std::{env, fmt::Display, slice, vec};
 
 /*
       11000010 will left shift 6 bytes to be prepended to the least significant byte
 11000010______
 the most significant byte of Rust String is placed at index 0
 */
-static UTF8PATTERN: [(u8, u8); 4] = [
+static UTF8HEADERMASK: [(u8, u8); 4] = [
     (0b00000000, 0),
     (0b11000000, 6),
     (0b11100000, 6 * 2),
     (0b11110000, 6 * 3),
 ];
+
+// proceeding bits, and their number
+static UTF8HEADERMASK2: [(u8, usize); 4] = [(0b0, 1), (0b110, 3), (0b1110, 4), (0b11110, 5)];
 
 #[derive(Debug, Default)]
 struct Representaion {
@@ -23,6 +22,7 @@ struct Representaion {
     hu8: Vec<u8>,
     // unicode code: U+xxxx
     unicode: u32,
+    utf8_frags: Vec<u8>,
 }
 
 static UTF8BINARYCODEPOINTLENGH: [[usize; 4]; 4] =
@@ -85,122 +85,191 @@ fn purple(s: String) -> String {
     format!(BIPURPLE!(), s)
 }
 
+fn white(s: String) -> String {
+    format!(BIWHITE!(), s)
+}
+
 static COLORIZERS: [fn(String) -> String; 4] = [red, green, blue, purple];
 
 fn colorize(v: Vec<String>) -> String {
     let mut res = String::default();
 
     for (i, mut s) in v.into_iter().enumerate() {
-        s = COLORIZERS[i](s.trim().to_string());
+        s = COLORIZERS[i](s.to_string());
         res = s + &res;
     }
     res
 }
 
 // Renderer
-fn render(unicode: u32, hu8: &[u8]) -> String {
-    // len | effective numbers width
-    // 1   | 7        = 7
-    // 2   | 5 6      = 11
-    // 3   | 4 6 6    = 16
-    // 4   | 3 6 6 6  = 21
-
-    let mut len = hu8.len();
-    let mut res = format!("{unicode:32b}");
-    dbg!(&res);
+fn render_bcp(unicode: u32, len: usize) -> String {
+    // example: "                  10000010101100"
+    let mut str32 = format!("{unicode:32b}");
+    dbg!(&str32);
 
     let zone = UTF8BINARYCODEPOINTLENGH[len - 1];
     dbg!(zone);
     let mut f: Vec<String> = vec![];
-    let mut cnt = 0;
+    // should not start with 0
+    let mut cnt = 1;
     for z in zone {
         let mut zstr = String::default();
+        // walk through the zone
         for _ in 0..z {
-            if cnt % 4 == 0 {
-                zstr.push(' ');
-            }
             // pop() can't be None in this scenario
-            let mut c = res.pop().unwrap();
+            let mut c = str32.pop().unwrap();
             if c == ' ' {
                 c = '0';
             }
+            // this will result in a reverse version of str32
+            // "0011 01"
             zstr.push(c);
+            if cnt % 4 == 0 {
+                zstr.push(' ');
+            }
             cnt += 1;
         }
+        dbg!(&zstr);
+        // reversed toL "10 1100"
         zstr = zstr.chars().rev().collect();
         f.push(zstr);
     }
-    dbg!(&f);
-    println!("{}", colorize(f));
+    let mut f2 = f
+        .into_iter()
+        .filter(|s| -> bool { !s.is_empty() })
+        .collect::<Vec<String>>();
+    // the last one should be trimmed, because it happens to be mod 4
+    //          but at the same time the end of string
+    let t = f2.last_mut().unwrap();
+    *t = t.trim().to_string();
+    dbg!(&f2);
+    colorize(f2)
+}
 
-    let a = format!(BIYELLOW!(), "r");
-    println!("{}{}", a, a);
-
-    dbg!(len);
-    dbg!(&res);
-    dbg!(&res.len());
-
-    dbg!(&res);
+fn colorize_pairs(pairs: Vec<(String, String)>) -> Vec<String> {
+    let pn = pairs.len();
+    let mut res = vec![];
+    for (i, pair) in pairs.into_iter().enumerate() {
+        let mut j = white(pair.0);
+        // i = 0 -> len - 1
+        // i = 1 -> len - 1 - 1
+        j += &COLORIZERS[pn - 1 - i](pair.1);
+        res.push(j);
+    }
     res
 }
-fn render_bu8(bu8: &[u8]) -> String {
-    String::default()
+
+// each unit consists of 2 part, the 1*0 and the value
+fn split_utf8_unit(unit: &[u8], len: usize) -> Vec<(String, String)> {
+    let mut res = vec![];
+    // layout msb, ... lsb
+    let mask = UTF8HEADERMASK2[len - 1];
+    let mut iter = unit.iter();
+    // the first byte is special
+    let msb = iter.next().unwrap();
+    res.push((
+        mask.0.with_padding_to(to_binary_string, mask.1),
+        msb.with_padding_to(to_binary_string, 8 - mask.1),
+    ));
+
+    for _ in 1..len {
+        let u = *iter.next().unwrap();
+        res.push((
+            0b10u8.with_padding_to(to_binary_string, 2),
+            u.with_padding_to(to_binary_string, 6),
+        ));
+    }
+    res
 }
-fn render_hu8(bu8: &[u8]) -> String {
-    String::default()
+
+fn render_bu8(utf8_frags: &[u8], len: usize) -> String {
+    let pairs = split_utf8_unit(utf8_frags, len);
+    let strs = colorize_pairs(pairs);
+    let mut res = String::default();
+    for mut s in strs {
+        s.push(' ');
+        res += &s;
+    }
+    res = res.trim_end().to_string();
+    res
+}
+
+fn render_hu8(hu8: &[u8]) -> String {
+    let len = hu8.len();
+    let mut res = String::default();
+    for (i, u) in hu8.iter().enumerate() {
+        let mut colored = COLORIZERS[len - 1 - i](u.with_padding_to(to_hexadecimal_string, 2));
+        colored.push(' ');
+        res += &colored;
+    }
+    res = res.trim().to_string();
+    res
 }
 
 impl Display for Representaion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
-            "|{i}|{u}|{bcp}|{bu8}|{hu8}|",
+            "│{i}│U+{u:x}│{bcp}│{bu8}│{hu8}│",
             i = self.input,
             u = self.unicode,
-            bcp = render(self.unicode, &self.hu8),
-            bu8 = render_bu8(&self.hu8),
+            bcp = render_bcp(self.unicode, self.hu8.len()),
+            bu8 = render_bu8(&self.utf8_frags, self.hu8.len()),
             hu8 = render_hu8(&self.hu8)
         )
     }
 }
 
-trait Padding<T: Sized> {
-    fn with_padding(self) -> Self;
+trait Padding {
+    fn with_padding(self) -> String;
+    fn with_padding_to(self, stringifier: fn(u8) -> String, num: usize) -> String;
 }
 
-// pad with 0 if lengh is less than 8n
-impl Padding<String> for String {
-    fn with_padding(self) -> Self {
-        let len = self.len();
-        let mood = len % 8;
-        if mood != 0 {
-            let rest = if len < 8 {
-                8 - len
-            } else {
-                let times: usize = len / 8 + 1;
-                times * 8 - len
-            };
-            return "0".repeat(rest) + &self;
+impl Padding for u8 {
+    fn with_padding_to(self, stringifier: fn(u8) -> String, num: usize) -> String {
+        let mut s = stringifier(self);
+        let len = s.len();
+        if len < num {
+            let d = num - len;
+            s = "0".repeat(d) + &s;
         }
-        self
+        s
+    }
+    fn with_padding(self) -> String {
+        self.with_padding_to(to_binary_string, 8)
     }
 }
+
+fn to_binary_string(n: u8) -> String {
+    format!("{:b}", n)
+}
+
+fn to_hexadecimal_string(n: u8) -> String {
+    format!("{:x}", n)
+}
+
 #[derive(Debug, Clone)]
 struct RepcError;
 
-fn utf8_to_unicode(input: &str) -> Result<u32, RepcError> {
+fn utf8_to_unicode(input: &str) -> Result<(u32, Vec<u8>), RepcError> {
     let mut flat: Vec<u32> = vec![];
+    // the real value that fill the holes of unicode format
+    let mut reals: Vec<u8> = vec![];
     let mut iter = input.bytes();
     let len = input.len();
     // the most significant byte is stored at index 0
     let msb = iter.next().ok_or(RepcError)?;
-    let mut binary = (UTF8PATTERN[len - 1].0 ^ msb) as u32;
-    binary <<= UTF8PATTERN[len - 1].1;
+    let real = UTF8HEADERMASK[len - 1].0 ^ msb;
+    let mut binary = real as u32;
+    reals.push(real);
+    binary <<= UTF8HEADERMASK[len - 1].1;
     flat.push(binary);
 
     for (i, c) in iter.enumerate() {
         dbg!(i);
-        let mut binary: u32 = (c ^ 0b10000000) as u32;
+        let real = c ^ 0b10000000;
+        let mut binary: u32 = real as u32;
+        reals.push(real);
         binary <<= 6 * (len - (i + 2));
         flat.push(binary);
     }
@@ -209,11 +278,10 @@ fn utf8_to_unicode(input: &str) -> Result<u32, RepcError> {
     for f in flat {
         unicode |= f;
     }
-    Ok(unicode)
+    Ok((unicode, reals))
 }
 
 // the result is little endian, the least significant byte is at index 0
-#[allow(dead_code)]
 fn u32_as_u8(src: u32) -> Vec<u8> {
     let ptr = &src as *const _;
     let res = unsafe { slice::from_raw_parts(ptr as *mut u8, 4) };
@@ -222,13 +290,14 @@ fn u32_as_u8(src: u32) -> Vec<u8> {
 
 fn decode(input: &str) -> Result<Representaion, RepcError> {
     // fragments scattered in bytes
-    let unicode = utf8_to_unicode(input)?;
+    let (unicode, utf8_frags) = utf8_to_unicode(input)?;
     let hu8: Vec<u8> = input.bytes().collect();
 
     Ok(Representaion {
         input: input.to_string(),
         hu8,
         unicode,
+        utf8_frags,
     })
 }
 
@@ -254,8 +323,7 @@ mod test {
     use super::*;
     #[test]
     fn test_padding() {
-        assert_eq!("11".to_string().with_padding(), "00000011");
-        assert_eq!("111111111".to_string().with_padding(), "0000000111111111");
+        assert_eq!(0b11u8.with_padding(), "00000011");
     }
 
     #[test]
@@ -278,7 +346,7 @@ mod test {
     fn test_utf8_to_u8() {
         {
             let ch = "𐍈";
-            let unicode = utf8_to_unicode(ch).unwrap();
+            let unicode = utf8_to_unicode(ch).unwrap().0;
             let binary = u32_as_u8(unicode);
             assert_eq!(
                 &binary as &[u8],
@@ -287,8 +355,18 @@ mod test {
             assert_eq!(unicode, 0x10348);
         }
         {
+            let ch = "€";
+            let unicode = utf8_to_unicode(ch).unwrap().0;
+            let binary = u32_as_u8(unicode);
+            assert_eq!(
+                &binary as &[u8],
+                [0b1010_1100, 0b0010_0000, 0b0000_0000, 0b0000_0000]
+            );
+            assert_eq!(unicode, 0x20ac);
+        }
+        {
             let ch = "£";
-            let unicode = utf8_to_unicode(ch).unwrap();
+            let unicode = utf8_to_unicode(ch).unwrap().0;
             let binary = u32_as_u8(unicode);
             assert_eq!(
                 &binary as &[u8],
@@ -298,7 +376,7 @@ mod test {
         }
         {
             let ch = "$";
-            let unicode = utf8_to_unicode(ch).unwrap();
+            let unicode = utf8_to_unicode(ch).unwrap().0;
             let binary = u32_as_u8(unicode);
             assert_eq!(
                 &binary as &[u8],
