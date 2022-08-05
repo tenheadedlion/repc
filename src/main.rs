@@ -1,10 +1,12 @@
 mod error;
 mod parser;
 mod renderer;
-use std::env;
+mod unicode;
+mod string;
+use renderer::render;
 use crate::error::*;
 use crate::parser::*;
-use crate::renderer::*;
+use std::env;
 
 fn main() -> Result<(), RepcError> {
     let args: Vec<String> = env::args().collect();
@@ -17,7 +19,11 @@ fn main() -> Result<(), RepcError> {
         print!("Usage: repc [char]");
         return Err(RepcError);
     }
+    if input.len() > 4 {
+        print!("Usage: repc [char]");
+        return Err(RepcError);
+    }
     let rep = decode(input)?;
-    print!("{}", rep);
+    render(&rep);
     Ok(())
 }
