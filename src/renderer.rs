@@ -1,6 +1,9 @@
 use crate::parser::*;
 use crate::string::{to_binary_string, to_hexadecimal_string, Padding};
 use crate::unicode::*;
+use term_table::row::Row;
+use term_table::table_cell::{Alignment, TableCell};
+use term_table::{Table, TableStyle};
 
 macro_rules! make_color {
     ($color: literal) => {
@@ -141,36 +144,7 @@ pub fn render_hu8(hu8: &[u8]) -> String {
     res = res.trim().to_string();
     res
 }
-
-// given a span of `len` size, place the s in the center of the span
-fn align_text_center(s: &str, len: usize) -> (String, usize) {
-    let slen = s.len();
-    if slen >= len {
-        return (s.to_string(), slen);
-    }
-    let spaces = len - slen;
-    let left = spaces / 2;
-    let right = spaces - left;
-
-    (" ".repeat(left) + s + &" ".repeat(right), len)
-}
-fn align_text_left(s: &str, len: usize) -> (String, usize) {
-    let slen = s.len();
-    if slen >= len {
-        return (s.to_string(), slen);
-    }
-    let spaces = len - slen;
-    (s.to_string() + &" ".repeat(spaces), len)
-}
-fn align_text_right(s: &str, len: usize) -> (String, usize) {
-    let slen = s.len();
-    if slen >= len {
-        return (s.to_string(), slen);
-    }
-    let spaces = len - slen;
-    (" ".repeat(spaces) + s, len)
-}
-
+#[allow(dead_code)]
 struct TextRepresentation {
     input: String,
     unicode: String,
@@ -205,42 +179,55 @@ impl From<&Representaion> for TextRepresentation {
 }
 
 pub fn render(rep: &Representaion) {
-    let mut lines = vec![];
-    // calculate the header width:
     let rep = TextRepresentation::from(rep);
-    let mut spans = vec![];
-    //  @ | U+
-    let len = 1 + 1 + rep.unicode.len();
-
-    let (c, len) = align_text_center("Character", len);
-    spans.push(len);
-    let len = rep.binary_code_point_length;
-
-    let (bcp, len) = align_text_center("Binary code point", len);
-    spans.push(len);
-    let len = rep.binary_utf8_length;
-
-    let (butf8, len) = align_text_center("Binary UTF-8", len);
-    spans.push(len);
-    let len = rep.hex_utf8_length;
-
-    let (hutf8, len) = align_text_center("Hex UTF-8", len);
-    spans.push(len);
-
-    let total_span: usize = spans.iter().sum();
-    let mut span = spans.iter();
-    lines.push(format!(" {} {} {} {}", c, bcp, butf8, hutf8));
-    lines.push("-".repeat(total_span + 10));
-    lines.push(format!(
-        "|{}|{}|{}|{}|{}|",
+    let mut table = Table::new();
+    table.style = TableStyle::extended();
+    table.add_row(Row::new(vec![TableCell::new_with_alignment(
+        "Character",
+        2,
+        Alignment::Center,
+    ),
+    TableCell::new_with_alignment(
+        "Binary code point",
+        1,
+        Alignment::Center,
+    ),
+    TableCell::new_with_alignment(
+        "Binary UTF-8",
+        1,
+        Alignment::Center,
+    ),
+    TableCell::new_with_alignment(
+        "Hex UTF-8",
+        1,
+        Alignment::Center,
+    )
+    ]));
+    table.add_row(Row::new(vec![TableCell::new_with_alignment(
         rep.input,
-        align_text_right(&rep.unicode, *span.next().unwrap() - 2).0,
-        align_text_right(&rep.binary_code_point, *span.next().unwrap()).0,
-        align_text_left(&rep.binary_utf8, *span.next().unwrap()).0,
-        align_text_left(&rep.hex_utf8, *span.next().unwrap()).0
-    ));
-
-    for line in lines {
-        println!("{}", line);
-    }
+        1,
+        Alignment::Center,
+    ),
+    TableCell::new_with_alignment(
+        rep.unicode,
+        1,
+        Alignment::Right,
+    ),
+    TableCell::new_with_alignment(
+        rep.binary_code_point,
+        1,
+        Alignment::Right,
+    ),
+    TableCell::new_with_alignment(
+        rep.binary_utf8,
+        1,
+        Alignment::Left,
+    ),
+    TableCell::new_with_alignment(
+        rep.hex_utf8,
+        1,
+        Alignment::Left,
+    )
+    ]));
+    println!("{}", table.render());
 }

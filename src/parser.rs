@@ -3,7 +3,6 @@ use crate::unicode::*;
 
 use std::{slice, vec};
 
-
 #[derive(Debug, Default)]
 pub struct Representaion {
     pub input: String,
@@ -29,7 +28,6 @@ fn utf8_to_unicode(input: &str) -> Result<(u32, Vec<u8>), RepcError> {
     flat.push(binary);
 
     for (i, c) in iter.enumerate() {
-        dbg!(i);
         let real = c ^ 0b10000000;
         let mut binary: u32 = real as u32;
         reals.push(real);
@@ -51,8 +49,6 @@ fn u32_as_u8(src: u32) -> Vec<u8> {
     let res = unsafe { slice::from_raw_parts(ptr as *mut u8, 4) };
     res.to_vec()
 }
-
-
 
 pub fn decode(input: &str) -> Result<Representaion, RepcError> {
     // fragments scattered in bytes

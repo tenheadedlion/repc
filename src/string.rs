@@ -1,4 +1,3 @@
-
 pub trait Padding<T> {
     fn with_padding(self, stringifier: fn(T) -> String, num: usize) -> String;
 }
